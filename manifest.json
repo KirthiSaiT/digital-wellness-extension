@@ -31,7 +31,7 @@
     "options_page": "options.html",
     "web_accessible_resources": [
       {
-        "resources": ["popup.html", "popup.js", "popup.css", "chart.min.js"],
+        "resources": ["popup.html", "popup.js", "popup.css", "chart.js"],
         "matches": ["<all_urls>"]
       }
     ],
