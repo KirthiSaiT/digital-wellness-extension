@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Digital Wellbeing Assistant Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Digital Wellbeing Settings</h1>
+      <p>Customize how the extension works to better fit your needs</p>
+    </header>
+    
+    <div class="settings-section">
+      <h2>Screen Time Goals</h2>
+      <div class="setting-item">
+        <label for="dailyScreenTimeGoal">Daily screen time goal (minutes)</label>
+        <input type="number" id="dailyScreenTimeGoal" min="30" max="720" step="10">
+        <span class="help-text">Recommended: 240 minutes (4 hours)</span>
+      </div>
+      
+      <h2>Focus Mode</h2>
+      <div class="setting-item">
+        <label for="focusModeDuration">Default focus session duration (minutes)</label>
+        <input type="number" id="focusModeDuration" min="5" max="120" step="5">
+      </div>
+      <div class="setting-item">
+        <label for="breakDuration">Default break duration (minutes)</label>
+        <input type="number" id="breakDuration" min="1" max="30" step="1">
+      </div>
+      
+      <h2>Category Limits</h2>
+      <div class="setting-item">
+        <label for="socialLimit">Social media daily limit (minutes)</label>
+        <input type="number" id="socialLimit" min="0" max="300" step="5">
+        <span class="help-text">Set to 0 for no limit</span>
+      </div>
+      <div class="setting-item">
+        <label for="entertainmentLimit">Entertainment daily limit (minutes)</label>
+        <input type="number" id="entertainmentLimit" min="0" max="300" step="5">
+        <span class="help-text">Set to 0 for no limit</span>
+      </div>
+      
+      <h2>Notifications</h2>
+      <div class="setting-item checkbox">
+        <input type="checkbox" id="notificationsEnabled">
+        <label for="notificationsEnabled">Enable notifications</label>
+      </div>
+      
+      <h2>Privacy</h2>
+      <div class="setting-item">
+        <label for="privacyLevel">Data collection level</label>
+        <select id="privacyLevel">
+          <option value="minimal">Minimal - Only aggregate data</option>
+          <option value="standard">Standard - Track categories and times</option>
+          <option value="detailed">Detailed - Full browsing activity</option>
+        </select>
+      </div>
+      
+      <div class="setting-item">
+        <button id="clearDataBtn" class="danger-btn">Clear All Collected Data</button>
+        <span class="help-text">This will reset all your usage statistics</span>
+      </div>
+    </div>
+    
+    <div class="action-buttons">
+      <button id="saveBtn" class="primary-btn">Save Changes</button>
+      <button id="resetBtn" class="secondary-btn">Reset to Defaults</button>
+    </div>
+    
+    <div id="saveStatus" class="save-status"></div>
+  </div>
+  
+  <script src="options.js"></script>
+</body>
+</html>

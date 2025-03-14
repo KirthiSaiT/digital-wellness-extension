@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Digital Wellbeing Assistant</title>
+  <link rel="stylesheet" href="popup.css">
+  <script src="chart.js"></script>
+</head>
+<body onload="initializeInsights()">
+  <div class="container">
+    <header>
+      <h1>Digital Wellbeing</h1>
+      <div class="tabs">
+        <button id="tab-dashboard" class="tab-btn active">Dashboard</button>
+        <button id="tab-focus" class="tab-btn">Focus Mode</button>
+        <button id="tab-insights" class="tab-btn">Insights</button>
+      </div>
+    </header>
+    
+    <div id="dashboard" class="tab-content active">
+      <div class="summary-card">
+        <h2>Today's Summary</h2>
+        <div id="today-total-time" class="metric">0 minutes</div>
+        <div class="progress-container">
+          <div id="today-progress" class="progress-bar"></div>
+        </div>
+        <div class="goal-text">of your <span id="daily-goal">240</span> minute goal</div>
+      </div>
+      
+      <div class="category-breakdown">
+        <h3>Category Breakdown</h3>
+        <div id="category-list" class="category-list"></div>
+      </div>
+      
+      <div class="quick-actions">
+        <button id="start-focus-btn" class="primary-btn">Start Focus Mode</button>
+        <button id="view-details-btn" class="secondary-btn">View Detailed Stats</button>
+      </div>
+    </div>
+    
+    <div id="focus-mode" class="tab-content">
+      <div class="focus-settings">
+        <h2>Focus Mode</h2>
+        <div id="focus-status" class="focus-status">Not active</div>
+        
+        <div class="focus-setup">
+          <div class="input-group">
+            <label for="focus-duration">Duration (minutes)</label>
+            <input type="number" id="focus-duration" min="5" max="120" value="25">
+          </div>
+          
+          <div class="input-group">
+            <label>Block these sites:</label>
+            <div id="block-sites-list" class="checkbox-list"></div>
+          </div>
+          
+          <div class="focus-actions">
+            <button id="start-focus-session" class="primary-btn">Start Session</button>
+            <button id="end-focus-session" class="secondary-btn" disabled>End Session</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div id="insights" class="tab-content">
+      <div class="insights-header">
+        <h2>Weekly Insights</h2>
+        <select id="insight-type">
+          <option value="daily">Daily Trends</option>
+          <option value="category">Category Breakdown</option>
+          <option value="sites">Top Sites</option>
+        </select>
+      </div>
+      
+      <div id="chart-container" class="chart-container">
+        <canvas id="insights-chart"></canvas>
+      </div>
+      
+      <div class="recommendations">
+        <h3>Recommendations</h3>
+        <ul id="recommendations-list"></ul>
+      </div>
+    </div>
+    
+    <footer>
+      <button id="settings-btn" class="icon-btn">⚙️</button>
+      <div class="version">v1.0</div>
+    </footer>
+  </div>
+  
+  <script src="popup.js"></script>
+  <script>
+    function initializeInsights() {
+      chrome.storage.local.get(["dailyStats", "weeklyStats"], (data) => {
+        if (data.dailyStats) {
+          updateRecommendations(data.dailyStats);
+          const insightType = document.getElementById('insight-type').value;
+          if (insightType === 'category') {
+            createCategoryBreakdownChart(data.dailyStats);
+          } else if (insightType === 'sites') {
+            createTopSitesChart(data.weeklyStats);
+          } else {
+            createDailyTrendsChart(data.dailyStats);
+          }
+        }
+      });
+      
+      document.getElementById('insight-type').addEventListener('change', function() {
+        chrome.storage.local.get(["dailyStats", "weeklyStats"], (data) => {
+          if (this.value === 'category') {
+            createCategoryBreakdownChart(data.dailyStats);
+          } else if (this.value === 'sites') {
+            createTopSitesChart(data.weeklyStats);
+          } else {
+            createDailyTrendsChart(data.dailyStats);
+          }
+        });
+      });
+    }
+  </script>
+</body>
+</html>

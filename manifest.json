@@ -1,0 +1,42 @@
+{
+    "manifest_version": 3,
+    "name": "Digital Wellbeing Assistant",
+    "version": "1.0",
+    "description": "Tracks and analyzes online activity to provide personalized recommendations for healthier digital habits.",
+    "permissions": [
+      "storage",
+      "tabs",
+      "history",
+      "alarms",
+      "notifications",
+      "idle",
+      "activeTab"
+    ],
+    "host_permissions": [
+      "<all_urls>"
+    ],
+    "background": {
+      "service_worker": "background.js",
+      "type": "module"
+    },
+    "action": {
+      "default_popup": "popup.html"
+    },
+    "content_scripts": [
+      {
+        "matches": ["<all_urls>"],
+        "js": ["content.js"]
+      }
+    ],
+    "options_page": "options.html",
+    "web_accessible_resources": [
+      {
+        "resources": ["popup.html", "popup.js", "popup.css", "chart.min.js"],
+        "matches": ["<all_urls>"]
+      }
+    ],
+    "content_security_policy": {
+      "extension_pages": "script-src 'self'; object-src 'self';"
+    }
+    
+  }
