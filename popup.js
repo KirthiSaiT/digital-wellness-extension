@@ -213,44 +213,85 @@ let insightsChart = null;
 
 function loadInsightsData() {
     console.log("Loading insights data...");
-    chrome.storage.local.get(['dailyStats', 'weeklyStats', 'activityData'], (data) => {
+    chrome.storage.local.get(['dailyStats', 'weeklyStats'], (data) => {
       let dailyStats = data.dailyStats || {};
       let weeklyStats = data.weeklyStats || {};
-      
-      if (Object.keys(dailyStats).length === 0) {
-        const sampleData = generateSampleData();
-        dailyStats = sampleData.dailyStats;
-        weeklyStats = sampleData.weeklyStats;
-      }
-      
-      const insightType = document.getElementById('insight-type').value;
-      if (insightsChart) {
-        insightsChart.destroy();
-      }
-      
-      const canvas = document.getElementById('insights-chart');
-      if (!canvas) {
-        console.error("Chart canvas not found!");
-        return;
-      }
-      
-      try {
-        switch (insightType) {
-          case 'daily':
-            createDailyTrendsChart(dailyStats);
-            break;
-          case 'category':
-            createCategoryBreakdownChart(dailyStats);
-            break;
-          case 'sites':
-            createTopSitesChart(weeklyStats);
-            break;
-        }
-        updateRecommendations(dailyStats);
-      } catch (error) {
-        console.error("Error creating chart:", error);
+
+      if (!weeklyStats || Object.keys(weeklyStats).length === 0) {
+        fetchTopSitesFromHistory((topSitesData) => {
+          weeklyStats = topSitesData;
+          chrome.storage.local.set({ weeklyStats }, () => {
+            console.log("Updated weeklyStats with real history data:", weeklyStats);
+            renderCharts(dailyStats, weeklyStats);
+          });
+        });
+      } else {
+        renderCharts(dailyStats, weeklyStats);
       }
     });
+}
+
+function fetchTopSitesFromHistory(callback) {
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    chrome.history.search({ text: '', startTime: oneWeekAgo.getTime(), maxResults: 100 }, (historyItems) => {
+      if (chrome.runtime.lastError) {
+        console.error("History access error:", chrome.runtime.lastError);
+        callback({ [new Date().toISOString().split('T')[0]]: {} });
+        return;
+      }
+
+      const siteVisits = {};
+      historyItems.forEach(item => {
+        const url = new URL(item.url);
+        const domain = url.hostname;
+        if (domain) {
+          siteVisits[domain] = (siteVisits[domain] || 0) + item.visitCount;
+        }
+      });
+      
+      const topSites = Object.entries(siteVisits)
+        .map(([site, visits]) => ({
+          site,
+          minutes: Math.round(visits * 5)
+        }))
+        .sort((a, b) => b.minutes - a.minutes)
+        .slice(0, 10);
+
+      const weeklyData = {};
+      weeklyData[new Date().toISOString().split('T')[0]] = topSites.reduce((acc, { site, minutes }) => ({ ...acc, [site]: minutes }), {});
+      callback(weeklyData);
+    });
+}
+
+function renderCharts(dailyStats, weeklyStats) {
+    const insightType = document.getElementById('insight-type').value;
+    if (insightsChart) {
+      insightsChart.destroy();
+    }
+    
+    const canvas = document.getElementById('insights-chart');
+    if (!canvas) {
+      console.error("Chart canvas not found!");
+      return;
+    }
+    
+    try {
+      switch (insightType) {
+        case 'daily':
+          createDailyTrendsChart(dailyStats);
+          break;
+        case 'category':
+          createCategoryBreakdownChart(dailyStats);
+          break;
+        case 'sites':
+          createTopSitesChart(weeklyStats);
+          break;
+      }
+      updateRecommendations(dailyStats);
+    } catch (error) {
+      console.error("Error creating chart:", error);
+    }
 }
 
 function generateSampleData() {
@@ -319,43 +360,8 @@ function createDailyTrendsChart(dailyStats) {
           label: 'Screen Time (minutes)',
           data: usageTimes,
           borderColor: '#3498db',
-          backgroundColor: 'rgba(52, 152, 219, 0.1)',
-          borderWidth: 2,
-          tension: 0.4,
-          fill: true,
-          pointRadius: 5,
-          pointBackgroundColor: '#3498db',
-          pointHoverRadius: 7
+          backgroundColor: 'rgba(52, 152, 219, 0.1)'
         }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          y: {
-            beginAtZero: true,
-            ticks: { callback: value => `${value}m` },
-            grid: { color: 'rgba(0, 0, 0, 0.05)' }
-          },
-          x: {
-            grid: { display: false }
-          }
-        },
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: '#2c3e50',
-            titleFont: { size: 14 },
-            bodyFont: { size: 12 },
-            callbacks: {
-              label: context => `${context.parsed.y} minutes on ${context.label}`
-            }
-          }
-        },
-        animation: {
-          duration: 1500,
-          easing: 'easeOutQuart'
-        }
       }
     });
 }
@@ -385,31 +391,6 @@ function createCategoryBreakdownChart(dailyStats) {
           borderWidth: 2,
           borderColor: '#fff'
         }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'right',
-            labels: {
-              font: { size: 12 },
-              color: '#2c3e50'
-            }
-          },
-          tooltip: {
-            backgroundColor: '#2c3e50',
-            titleFont: { size: 14 },
-            bodyFont: { size: 12 },
-            callbacks: {
-              label: context => `${context.label}: ${context.raw} minutes`
-            }
-          }
-        },
-        animation: {
-          duration: 1500,
-          easing: 'easeOutQuart'
-        }
       }
     });
 }
@@ -417,58 +398,51 @@ function createCategoryBreakdownChart(dailyStats) {
 function createTopSitesChart(weeklyStats) {
     const ctx = document.getElementById('insights-chart').getContext('2d');
     const combinedData = {};
-    Object.values(weeklyStats).forEach(day => {
-      Object.entries(day).forEach(([site, sec]) => {
-        combinedData[site] = (combinedData[site] || 0) + (typeof sec === 'number' ? sec : 0);
-      });
+    const currentDate = new Date().toISOString().split('T')[0];
+    const sitesData = weeklyStats[currentDate] || {};
+
+    Object.entries(sitesData).forEach(([site, minutes]) => {
+      combinedData[site] = (combinedData[site] || 0) + minutes;
     });
     
     const topSites = Object.entries(combinedData)
-      .map(([site, sec]) => ({ site, minutes: Math.round(sec / 60) }))
+      .map(([site, minutes]) => ({
+        site: site.replace(/^www\./, ''), // Remove "www."
+        minutes: Math.round(minutes)
+      }))
       .sort((a, b) => b.minutes - a.minutes)
       .slice(0, 10);
-    
-    insightsChart = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: topSites.map(item => item.site.length > 20 ? item.site.substring(0, 17) + '...' : item.site),
-        datasets: [{
-          label: 'Minutes',
-          data: topSites.map(item => item.minutes),
-          backgroundColor: 'rgba(52, 152, 219, 0.7)',
-          borderColor: '#2980b9',
-          borderWidth: 1
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          y: {
-            beginAtZero: true,
-            ticks: { callback: value => `${value}m` },
-            grid: { color: 'rgba(0, 0, 0, 0.05)' }
-          },
-          x: {
-            grid: { display: false }
-          }
-        },
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: '#2c3e50',
-            titleFont: { size: 14 },
-            bodyFont: { size: 12 },
-            callbacks: {
-              label: context => `${context.label}: ${context.parsed.y} minutes`
+
+    if (topSites.length === 0) {
+        console.warn("No top sites data available. Check history permissions or data.");
+        insightsChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['No Data'],
+                datasets: [{
+                    label: 'Minutes',
+                    data: [0],
+                    backgroundColor: 'rgba(52, 152, 219, 0.7)',
+                    borderColor: '#2980b9',
+                    borderWidth: 1
+                }]
             }
-          }
-        },
-        animation: {
-          duration: 1500,
-          easing: 'easeOutQuart'
+        });
+        return;
+    }
+
+    insightsChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: topSites.map(item => item.site.length > 15 ? item.site.substring(0, 12) + '...' : item.site),
+            datasets: [{
+                label: 'Minutes',
+                data: topSites.map(item => item.minutes),
+                backgroundColor: 'rgba(52, 152, 219, 0.8)',
+                borderColor: '#2980b9',
+                borderWidth: 1
+            }]
         }
-      }
     });
 }
 

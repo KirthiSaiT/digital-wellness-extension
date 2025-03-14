@@ -1,4 +1,3 @@
-// Enhanced chart.js with professional features
 window.Chart = function(canvasContext, config) {
     this.ctx = canvasContext;
     this.config = config;
@@ -35,7 +34,7 @@ Chart.prototype.setupEventListeners = function() {
 
 Chart.prototype.updateTooltip = function(mouseX, mouseY) {
     this.tooltip.visible = false;
-    const padding = 10;
+    const padding = 30;
     const width = this.canvas.width - 2 * padding;
     const height = this.canvas.height - 2 * padding;
 
@@ -89,11 +88,11 @@ Chart.prototype.updateTooltip = function(mouseX, mouseY) {
     } else if (this.config.type === 'bar') {
         const data = this.config.data.datasets[0].data;
         const labels = this.config.data.labels;
-        const barWidth = (width / data.length) * 0.8;
+        const barWidth = (width / data.length) * 0.6;
         const maxValue = Math.max(...data);
 
         for (let i = 0; i < data.length; i++) {
-            const x = padding + i * (barWidth + (width / data.length) * 0.2);
+            const x = padding + i * (barWidth + (width / data.length) * 0.4);
             const barHeight = (data[i] / maxValue * height) * this.animationProgress;
             const y = padding + height - barHeight;
             if (mouseX >= x && mouseX <= x + barWidth && mouseY >= y && mouseY <= padding + height) {
@@ -137,12 +136,12 @@ Chart.prototype.draw = function() {
     }
 
     if (this.tooltip.visible) {
-        ctx.fillStyle = '#2c3e50';
-        ctx.font = '12px Segoe UI';
+        ctx.fillStyle = 'rgba(44, 62, 80, 0.9)';
+        ctx.font = '11px Segoe UI';
         const textWidth = ctx.measureText(this.tooltip.text).width;
-        ctx.fillRect(this.tooltip.x, this.tooltip.y - 15, textWidth + 10, 20);
+        ctx.fillRect(this.tooltip.x - 5, this.tooltip.y - 18, textWidth + 10, 20);
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(this.tooltip.text, this.tooltip.x + 5, this.tooltip.y - 2);
+        ctx.fillText(this.tooltip.text, this.tooltip.x, this.tooltip.y - 5);
     }
 };
 
@@ -150,7 +149,7 @@ Chart.prototype.drawLineChart = function() {
     const ctx = this.ctx;
     const data = this.config.data.datasets[0].data;
     const labels = this.config.data.labels;
-    const padding = 40;
+    const padding = 30;
     const width = this.canvas.width - 2 * padding;
     const height = this.canvas.height - 2 * padding;
     const maxValue = Math.max(...data);
@@ -167,16 +166,16 @@ Chart.prototype.drawLineChart = function() {
 
     // Draw Y-axis labels
     ctx.fillStyle = '#2c3e50';
-    ctx.font = '12px Segoe UI';
+    ctx.font = '11px Segoe UI';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     const ySteps = 5;
     for (let i = 0; i <= ySteps; i++) {
         const y = padding + height - (i / ySteps) * height;
         const value = (i / ySteps) * maxValue;
-        ctx.fillText(Math.round(value) + 'm', padding - 10, y);
+        ctx.fillText(Math.round(value) + 'm', padding - 5, y);
         ctx.beginPath();
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.05)';
         ctx.moveTo(padding, y);
         ctx.lineTo(padding + width, y);
         ctx.stroke();
@@ -186,7 +185,7 @@ Chart.prototype.drawLineChart = function() {
     ctx.textAlign = 'center';
     for (let i = 0; i < labels.length; i++) {
         const x = padding + i * stepX;
-        ctx.fillText(labels[i], x, padding + height + 20);
+        ctx.fillText(labels[i], x, padding + height + 15);
     }
 
     // Draw line
@@ -207,11 +206,11 @@ Chart.prototype.drawLineChart = function() {
         const x = padding + index * stepX;
         const y = padding + height - (value / maxValue * height) * this.animationProgress;
         ctx.beginPath();
-        ctx.arc(x, y, 5, 0, 2 * Math.PI);
+        ctx.arc(x, y, 4, 0, 2 * Math.PI);
         ctx.fill();
         ctx.fillStyle = '#2c3e50';
         ctx.textAlign = 'center';
-        ctx.fillText(value + 'm', x, y - 15);
+        ctx.fillText(value + 'm', x, y - 12);
         ctx.fillStyle = this.config.data.datasets[0].borderColor;
     });
 };
@@ -239,15 +238,15 @@ Chart.prototype.drawDoughnutChart = function() {
     });
 
     // Draw legend
-    const legendX = this.canvas.width - 100;
-    const legendY = 20;
-    ctx.font = '12px Segoe UI';
+    const legendX = this.canvas.width - 80;
+    const legendY = 15;
+    ctx.font = '11px Segoe UI';
     ctx.textAlign = 'left';
     data.forEach((value, index) => {
         ctx.fillStyle = colors[index];
-        ctx.fillRect(legendX, legendY + index * 20, 10, 10);
+        ctx.fillRect(legendX, legendY + index * 18, 8, 8);
         ctx.fillStyle = '#2c3e50';
-        ctx.fillText(`${labels[index]}: ${value}m`, legendX + 20, legendY + index * 20 + 5);
+        ctx.fillText(`${labels[index]}: ${value}m`, legendX + 15, legendY + index * 18 + 4);
     });
 };
 
@@ -255,10 +254,10 @@ Chart.prototype.drawBarChart = function() {
     const ctx = this.ctx;
     const data = this.config.data.datasets[0].data;
     const labels = this.config.data.labels;
-    const padding = 40;
+    const padding = 30;
     const width = this.canvas.width - 2 * padding;
     const height = this.canvas.height - 2 * padding;
-    const barWidth = (width / data.length) * 0.8;
+    const barWidth = (width / data.length) * 0.6;
     const maxValue = Math.max(...data);
 
     // Draw axes
@@ -272,36 +271,42 @@ Chart.prototype.drawBarChart = function() {
 
     // Draw Y-axis labels
     ctx.fillStyle = '#2c3e50';
-    ctx.font = '12px Segoe UI';
+    ctx.font = '11px Segoe UI';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     const ySteps = 5;
     for (let i = 0; i <= ySteps; i++) {
         const y = padding + height - (i / ySteps) * height;
         const value = (i / ySteps) * maxValue;
-        ctx.fillText(Math.round(value) + 'm', padding - 10, y);
+        ctx.fillText(Math.round(value) + 'm', padding - 5, y);
         ctx.beginPath();
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.05)';
         ctx.moveTo(padding, y);
         ctx.lineTo(padding + width, y);
         ctx.stroke();
     }
 
-    // Draw X-axis labels
+    // Draw X-axis labels with rotation for better fit
     ctx.textAlign = 'center';
+    ctx.font = '11px Segoe UI';
     for (let i = 0; i < labels.length; i++) {
-        const x = padding + i * (barWidth + (width / data.length) * 0.2) + barWidth / 2;
-        ctx.fillText(labels[i], x, padding + height + 20);
+        const x = padding + i * (barWidth + (width / data.length) * 0.4) + barWidth / 2;
+        ctx.save();
+        ctx.translate(x, padding + height + 25);
+        ctx.rotate(-Math.PI / 4);
+        ctx.fillText(labels[i], 0, 0);
+        ctx.restore();
     }
 
     // Draw bars
     ctx.fillStyle = this.config.data.datasets[0].backgroundColor;
     data.forEach((value, index) => {
         const barHeight = (value / maxValue * height) * this.animationProgress;
-        const x = padding + index * (barWidth + (width / data.length) * 0.2);
+        const x = padding + index * (barWidth + (width / data.length) * 0.4);
         const y = padding + height - barHeight;
         ctx.fillRect(x, y, barWidth, barHeight);
         ctx.fillStyle = '#2c3e50';
+        ctx.textAlign = 'center';
         ctx.fillText(value + 'm', x + barWidth / 2, y - 10);
         ctx.fillStyle = this.config.data.datasets[0].backgroundColor;
     });

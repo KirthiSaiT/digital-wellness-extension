@@ -31,6 +31,19 @@ const CATEGORIES = {
         blockedSites: []
       }
     });
+    chrome.history.onVisited.addListener((historyItem) => {
+        const now = new Date().toISOString().split('T')[0];
+        chrome.storage.local.get(['dailyStats'], (data) => {
+          const dailyStats = data.dailyStats || {};
+          const dayStats = dailyStats[now] || { totalTime: 0, categories: {} };
+          const url = new URL(historyItem.url);
+          const domain = url.hostname;
+          dayStats.totalTime += 60; // Increment by 1 minute (adjust as needed)
+          dayStats.categories['OTHER'] = (dayStats.categories['OTHER'] || 0) + 60;
+          dailyStats[now] = dayStats;
+          chrome.storage.local.set({ dailyStats });
+        });
+      });
     
     // Create alarms for daily and weekly summaries
     chrome.alarms.create('dailySummary', { periodInMinutes: 1440 }); // 24 hours
@@ -78,6 +91,16 @@ const CATEGORIES = {
         checkFocusMode(tab.url, tab.id);
       }
     });
+  }
+  if (Object.keys(weeklyStats).length === 0 || !weeklyStats[currentDate]) {
+    fetchTopSitesFromHistory((topSitesData) => {
+      weeklyStats = topSitesData;
+      chrome.storage.local.set({ weeklyStats }, () => {
+        renderCharts(dailyStats, weeklyStats);
+      });
+    });
+  } else {
+    renderCharts(dailyStats, weeklyStats);
   }
   
   // Record tab activity
