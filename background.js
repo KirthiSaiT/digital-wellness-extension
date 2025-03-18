@@ -1,8 +1,16 @@
 // Category definitions
 const siteCategories = {
   'facebook.com': 'Social', 'twitter.com': 'Social', 'instagram.com': 'Social',
+  'linkedin.com': 'Social', 'reddit.com': 'Social',
   'docs.google.com': 'Work', 'notion.so': 'Work', 'github.com': 'Work',
+  'slack.com': 'Work', 'trello.com': 'Work', 'asana.com': 'Work',
+  'drive.google.com': 'Work',
   'youtube.com': 'Entertainment', 'netflix.com': 'Entertainment',
+  'twitch.tv': 'Entertainment', 'spotify.com': 'Entertainment',
+  'vimeo.com': 'Entertainment',
+  'google.com': 'Search', 'bing.com': 'Search',
+  'wikipedia.org': 'Education', 'stackoverflow.com': 'Education',
+  'coursera.org': 'Education', 'udemy.com': 'Education',
   'default': 'Other'
 };
 
@@ -59,6 +67,7 @@ function handleTabChange(tab) {
     if (data.focusMode?.active) checkFocusMode(tab.url, tab.id);
   });
 }
+
 function recordTabActivity(url, duration) {
   if (!url || url.startsWith('chrome://') || duration < 1000) return;
 
@@ -66,6 +75,11 @@ function recordTabActivity(url, duration) {
   const date = new Date().toISOString().split('T')[0];
   const seconds = Math.round(duration / 1000);
   const category = siteCategories[domain] || siteCategories['default'];
+
+  // Log uncategorized domains for debugging
+  if (!siteCategories[domain]) {
+    console.warn(`Uncategorized domain: ${domain}, assigned to 'Other'`);
+  }
 
   chrome.storage.local.get(['activityData', 'dailyStats', 'settings', 'productivityScore'], (data) => {
     let activityData = data.activityData || {};
@@ -77,12 +91,19 @@ function recordTabActivity(url, duration) {
     if (!activityData[date]) activityData[date] = {};
     activityData[date][domain] = (activityData[date][domain] || 0) + seconds;
 
-    // Ensure dailyStats[date] is initialized properly
+    // Ensure dailyStats[date] is initialized with all categories
     if (!dailyStats[date]) {
       dailyStats[date] = { 
         totalTime: 0, 
         sites: {}, 
-        categories: { Social: 0, Work: 0, Entertainment: 0, Other: 0 } 
+        categories: { 
+          Social: 0, 
+          Work: 0, 
+          Entertainment: 0, 
+          Search: 0, 
+          Education: 0, 
+          Other: 0 
+        } 
       };
     }
 
@@ -97,18 +118,25 @@ function recordTabActivity(url, duration) {
     checkLimits(settings, dailyStats[date], domain, seconds);
     updateProductivityScore(productivityScore, domain, seconds, date);
 
-    // Save the updated data and ensure it’s synced
+    // Save the updated data and update weekly stats
     chrome.storage.local.set({ activityData, dailyStats, productivityScore }, () => {
       console.log(`Data saved for ${date}:`, dailyStats[date]);
-      chrome.runtime.sendMessage({ action: 'dataUpdated' });
+      // Update weekly stats immediately after saving daily stats
+      const weeklyData = aggregateWeeklyStats(dailyStats);
+      chrome.storage.local.set({ weeklyStats: weeklyData }, () => {
+        console.log("Weekly stats updated after activity:", weeklyData);
+        chrome.runtime.sendMessage({ action: 'dataUpdated' });
+      });
     });
   });
 }
+
 function extractDomain(url) {
   try {
     const hostname = new URL(url).hostname;
     return hostname.startsWith('www.') ? hostname.substring(4) : hostname;
   } catch (e) {
+    console.error(`Error extracting domain from ${url}:`, e);
     return '';
   }
 }
@@ -171,20 +199,32 @@ function generateDailySummary() {
 
 function generateWeeklySummary() {
   chrome.storage.local.get(['dailyStats', 'settings'], (data) => {
-    const weeklyData = aggregateWeeklyStats(data.dailyStats || {});
+    const dailyStats = data.dailyStats || {};
+    const weeklyData = aggregateWeeklyStats(dailyStats);
     chrome.storage.local.set({ weeklyStats: weeklyData }, () => {
+      console.log("Weekly stats updated via alarm:", weeklyData);
       chrome.runtime.sendMessage({ action: 'dataUpdated' });
     });
-    if (data.settings.notificationsEnabled) notify('Weekly Summary', 'Your weekly report is ready!');
+    if (data.settings?.notificationsEnabled) notify('Weekly Summary', 'Your weekly report is ready!');
   });
 }
 
 function aggregateWeeklyStats(dailyStats) {
   const weeklySites = {};
-  const weeklyCategories = {};
+  const weeklyCategories = { 
+    Social: 0, 
+    Work: 0, 
+    Entertainment: 0, 
+    Search: 0, 
+    Education: 0, 
+    Other: 0 
+  };
   const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+  let totalTime = 0;
+
   Object.entries(dailyStats).forEach(([date, stats]) => {
     if (date >= sevenDaysAgo) {
+      totalTime += stats.totalTime || 0;
       Object.entries(stats.sites || {}).forEach(([site, seconds]) => {
         weeklySites[site] = (weeklySites[site] || 0) + seconds;
       });
@@ -193,10 +233,16 @@ function aggregateWeeklyStats(dailyStats) {
       });
     }
   });
+
+  // Sort sites by time spent (descending) for top sites chart
+  const sortedSites = Object.fromEntries(
+    Object.entries(weeklySites).sort(([, a], [, b]) => b - a)
+  );
+
   return {
-    sites: weeklySites,
+    sites: sortedSites,
     categories: weeklyCategories,
-    totalTime: Object.values(weeklySites).reduce((sum, sec) => sum + sec, 0)
+    totalTime: totalTime
   };
 }
 
