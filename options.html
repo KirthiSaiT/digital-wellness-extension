@@ -3,76 +3,78 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Digital Wellbeing Assistant Settings</title>
+  <title>Digital Wellbeing Settings</title>
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>Digital Wellbeing Settings</h1>
-      <p>Customize how the extension works to better fit your needs</p>
+      <h1>Settings</h1>
+      <p>Customize your digital wellbeing experience</p>
     </header>
-    
-    <div class="settings-section">
-      <h2>Screen Time Goals</h2>
+
+    <section class="settings-section">
+      <h2>Goals</h2>
       <div class="setting-item">
-        <label for="dailyScreenTimeGoal">Daily screen time goal (minutes)</label>
+        <label for="dailyScreenTimeGoal">Daily Screen Time Goal (min)</label>
         <input type="number" id="dailyScreenTimeGoal" min="30" max="720" step="10">
-        <span class="help-text">Recommended: 240 minutes (4 hours)</span>
+        <span class="help-text">Recommended: 180 min</span>
       </div>
-      
+
       <h2>Focus Mode</h2>
       <div class="setting-item">
-        <label for="focusModeDuration">Default focus session duration (minutes)</label>
+        <label for="focusModeDuration">Default Focus Duration (min)</label>
         <input type="number" id="focusModeDuration" min="5" max="120" step="5">
       </div>
       <div class="setting-item">
-        <label for="breakDuration">Default break duration (minutes)</label>
+        <label for="breakDuration">Default Break Duration (min)</label>
         <input type="number" id="breakDuration" min="1" max="30" step="1">
       </div>
-      
-      <h2>Category Limits</h2>
       <div class="setting-item">
-        <label for="socialLimit">Social media daily limit (minutes)</label>
-        <input type="number" id="socialLimit" min="0" max="300" step="5">
-        <span class="help-text">Set to 0 for no limit</span>
+        <label for="breakReminderInterval">Break Reminder Interval (min)</label>
+        <input type="number" id="breakReminderInterval" min="30" max="240" step="10">
       </div>
+
+      <h2>Site Limits</h2>
       <div class="setting-item">
-        <label for="entertainmentLimit">Entertainment daily limit (minutes)</label>
-        <input type="number" id="entertainmentLimit" min="0" max="300" step="5">
-        <span class="help-text">Set to 0 for no limit</span>
+        <label>Add Site Limit</label>
+        <div class="site-limit-input">
+          <input type="text" id="siteLimitInput" placeholder="e.g., youtube.com">
+          <input type="number" id="siteLimitValue" min="0" max="300" step="5" placeholder="Minutes">
+          <button id="addSiteLimit" class="primary-btn">Add</button>
+        </div>
+        <div id="siteLimitsList" class="site-limits-list"></div>
       </div>
-      
+
       <h2>Notifications</h2>
       <div class="setting-item checkbox">
         <input type="checkbox" id="notificationsEnabled">
-        <label for="notificationsEnabled">Enable notifications</label>
+        <label for="notificationsEnabled">Enable Notifications</label>
       </div>
-      
+
       <h2>Privacy</h2>
       <div class="setting-item">
-        <label for="privacyLevel">Data collection level</label>
+        <label for="privacyLevel">Data Collection Level</label>
         <select id="privacyLevel">
-          <option value="minimal">Minimal - Only aggregate data</option>
-          <option value="standard">Standard - Track categories and times</option>
-          <option value="detailed">Detailed - Full browsing activity</option>
+          <option value="minimal">Minimal - Aggregate only</option>
+          <option value="standard">Standard - Categories & times</option>
+          <option value="detailed">Detailed - Full activity</option>
         </select>
       </div>
-      
+
       <div class="setting-item">
-        <button id="clearDataBtn" class="danger-btn">Clear All Collected Data</button>
-        <span class="help-text">This will reset all your usage statistics</span>
+        <button id="clearDataBtn" class="danger-btn">Clear All Data</button>
+        <span class="help-text">Resets all statistics</span>
       </div>
-    </div>
-    
+    </section>
+
     <div class="action-buttons">
-      <button id="saveBtn" class="primary-btn">Save Changes</button>
-      <button id="resetBtn" class="secondary-btn">Reset to Defaults</button>
+      <button id="saveBtn" class="primary-btn">Save</button>
+      <button id="resetBtn" class="secondary-btn">Reset</button>
     </div>
-    
+
     <div id="saveStatus" class="save-status"></div>
   </div>
-  
   <script src="options.js"></script>
 </body>
 </html>

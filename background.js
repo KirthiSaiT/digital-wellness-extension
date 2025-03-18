@@ -1,369 +1,284 @@
-// Constants
-const CATEGORIES = {
-    SOCIAL: ['facebook.com', 'twitter.com', 'instagram.com', 'tiktok.com', 'linkedin.com'],
-    PRODUCTIVITY: ['docs.google.com', 'notion.so', 'trello.com', 'asana.com', 'slack.com', 'github.com'],
-    ENTERTAINMENT: ['youtube.com', 'netflix.com', 'hulu.com', 'twitch.tv', 'reddit.com'],
-    NEWS: ['nytimes.com', 'cnn.com', 'bbc.com', 'reuters.com', 'apnews.com'],
-    SHOPPING: ['amazon.com', 'ebay.com', 'etsy.com', 'walmart.com', 'target.com']
+// Category definitions
+const siteCategories = {
+  'facebook.com': 'Social', 'twitter.com': 'Social', 'instagram.com': 'Social',
+  'docs.google.com': 'Work', 'notion.so': 'Work', 'github.com': 'Work',
+  'youtube.com': 'Entertainment', 'netflix.com': 'Entertainment',
+  'default': 'Other'
+};
+
+// Initialize data structure
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.storage.local.set({
+    activityData: {},
+    dailyStats: {},
+    weeklyStats: {},
+    settings: {
+      dailyScreenTimeGoal: 180,
+      focusModeDuration: 25,
+      breakDuration: 5,
+      breakReminderInterval: 60,
+      notificationsEnabled: true,
+      privacyLevel: 'standard',
+      siteLimits: {}
+    },
+    focusMode: { active: false, startTime: null, endTime: null, blockedSites: [] },
+    productivityScore: { today: 0, weeklyAvg: 0 }
+  });
+
+  chrome.alarms.create('dailySummary', { periodInMinutes: 1440 });
+  chrome.alarms.create('weeklySummary', { periodInMinutes: 10080 });
+  chrome.alarms.create('activityTracker', { periodInMinutes: 1 });
+  chrome.alarms.create('breakReminder', { periodInMinutes: 60 });
+});
+
+// Active tab tracking
+let activeTabId = null;
+let activeTabUrl = null;
+let activeTabStartTime = null;
+
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  const tab = await chrome.tabs.get(activeInfo.tabId);
+  handleTabChange(tab);
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tabId === activeTabId) {
+    handleTabChange(tab);
+  }
+});
+
+function handleTabChange(tab) {
+  if (activeTabId && activeTabUrl && activeTabStartTime) {
+    recordTabActivity(activeTabUrl, Date.now() - activeTabStartTime);
+  }
+  activeTabId = tab.id;
+  activeTabUrl = tab.url;
+  activeTabStartTime = Date.now();
+
+  chrome.storage.local.get(['focusMode'], (data) => {
+    if (data.focusMode?.active) checkFocusMode(tab.url, tab.id);
+  });
+}
+
+function recordTabActivity(url, duration) {
+  if (!url || url.startsWith('chrome://') || duration < 1000) return;
+
+  const domain = extractDomain(url);
+  const date = new Date().toISOString().split('T')[0];
+  const seconds = Math.round(duration / 1000);
+  const category = siteCategories[domain] || siteCategories['default'];
+
+  chrome.storage.local.get(['activityData', 'dailyStats', 'settings', 'productivityScore'], (data) => {
+    let activityData = data.activityData || {};
+    let dailyStats = data.dailyStats || {};
+    const settings = data.settings || {};
+    let productivityScore = data.productivityScore || { today: 0, weeklyAvg: 0 };
+
+    if (!activityData[date]) activityData[date] = {};
+    activityData[date][domain] = (activityData[date][domain] || 0) + seconds;
+
+    if (!dailyStats[date]) dailyStats[date] = { totalTime: 0, sites: {}, categories: {} };
+    dailyStats[date].totalTime += seconds;
+    dailyStats[date].sites[domain] = (dailyStats[date].sites[domain] || 0) + seconds;
+    dailyStats[date].categories[category] = (dailyStats[date].categories[category] || 0) + seconds;
+
+    checkLimits(settings, dailyStats[date], domain, seconds);
+    updateProductivityScore(productivityScore, domain, seconds, date);
+
+    chrome.storage.local.set({ activityData, dailyStats, productivityScore });
+  });
+}
+
+function extractDomain(url) {
+  try {
+    const hostname = new URL(url).hostname;
+    return hostname.startsWith('www.') ? hostname.substring(4) : hostname;
+  } catch (e) {
+    return '';
+  }
+}
+
+function checkFocusMode(url, tabId) {
+  chrome.storage.local.get(['focusMode'], (data) => {
+    if (data.focusMode?.active && data.focusMode.blockedSites.includes(extractDomain(url))) {
+      chrome.tabs.update(tabId, { url: chrome.runtime.getURL('focus-blocked.html') });
+    }
+  });
+}
+
+function checkLimits(settings, dailyStats, domain, seconds) {
+  const minutes = Math.round(dailyStats.totalTime / 60);
+  if (settings.dailyScreenTimeGoal && minutes >= settings.dailyScreenTimeGoal && settings.notificationsEnabled) {
+    notify('Daily Limit Reached', `You've spent ${minutes} minutes online today.`);
+  }
+
+  if (settings.siteLimits?.[domain] && (dailyStats.sites[domain] || 0) / 60 >= settings.siteLimits[domain]) {
+    notify('Site Limit', `You've exceeded your limit for ${domain}.`);
+  }
+}
+
+function updateProductivityScore(score, domain, seconds, date) {
+  const today = new Date().toISOString().split('T')[0];
+  const productiveSites = ['docs.google.com', 'notion.so', 'github.com'];
+  const weight = productiveSites.includes(domain) ? 1 : -0.2;
+  const points = weight * (seconds / 60);
+  if (date === today) score.today = Math.max(0, Math.min(100, score.today + points));
+}
+
+function notify(title, message) {
+  chrome.notifications.create({
+    type: 'basic',
+    iconUrl: 'images/icon128.png',
+    title,
+    message,
+    priority: 2
+  });
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'dailySummary') generateDailySummary();
+  else if (alarm.name === 'weeklySummary') generateWeeklySummary();
+  else if (alarm.name === 'activityTracker') updateCurrentActivity();
+  else if (alarm.name === 'focusModeEnd') endFocusMode();
+  else if (alarm.name === 'breakReminder') suggestBreak();
+});
+
+function generateDailySummary() {
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  chrome.storage.local.get(['dailyStats', 'settings'], (data) => {
+    const stats = data.dailyStats?.[yesterday];
+    if (!stats) return;
+    const minutes = Math.round(stats.totalTime / 60);
+    const message = `Yesterday: ${minutes} min online.${minutes > data.settings.dailyScreenTimeGoal ? ' Over goal!' : ''}`;
+    if (data.settings.notificationsEnabled) notify('Daily Summary', message);
+  });
+}
+
+function generateWeeklySummary() {
+  chrome.storage.local.get(['dailyStats', 'settings'], (data) => {
+    const weeklyData = aggregateWeeklyStats(data.dailyStats || {});
+    chrome.storage.local.set({ weeklyStats: weeklyData });
+    if (data.settings.notificationsEnabled) notify('Weekly Summary', 'Your weekly report is ready!');
+  });
+}
+
+function aggregateWeeklyStats(dailyStats) {
+  const weeklySites = {};
+  const weeklyCategories = {};
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+  Object.entries(dailyStats).forEach(([date, stats]) => {
+    if (date >= sevenDaysAgo) {
+      Object.entries(stats.sites || {}).forEach(([site, seconds]) => {
+        weeklySites[site] = (weeklySites[site] || 0) + seconds;
+      });
+      Object.entries(stats.categories || {}).forEach(([cat, seconds]) => {
+        weeklyCategories[cat] = (weeklyCategories[cat] || 0) + seconds;
+      });
+    }
+  });
+  return {
+    sites: weeklySites,
+    categories: weeklyCategories,
+    totalTime: Object.values(weeklySites).reduce((sum, sec) => sum + sec, 0)
   };
-  
-  // Initialize data structure
-  chrome.runtime.onInstalled.addListener(() => {
-    chrome.storage.local.set({
-      activityData: {},
-      dailyStats: {},
-      weeklyStats: {},
-      settings: {
-        dailyScreenTimeGoal: 240, // 4 hours in minutes
-        focusModeDuration: 25, // 25 minutes
-        breakDuration: 5, // 5 minutes
-        notificationsEnabled: true,
-        privacyLevel: 'standard', // 'minimal', 'standard', 'detailed'
-        categoriesLimit: {
-          SOCIAL: 60, // minutes
-          ENTERTAINMENT: 90 // minutes
-        }
-      },
-      focusMode: {
-        active: false,
-        startTime: null,
-        endTime: null,
-        blockedSites: []
-      }
-    });
-    chrome.history.onVisited.addListener((historyItem) => {
-        const now = new Date().toISOString().split('T')[0];
-        chrome.storage.local.get(['dailyStats'], (data) => {
-          const dailyStats = data.dailyStats || {};
-          const dayStats = dailyStats[now] || { totalTime: 0, categories: {} };
-          const url = new URL(historyItem.url);
-          const domain = url.hostname;
-          dayStats.totalTime += 60; // Increment by 1 minute (adjust as needed)
-          dayStats.categories['OTHER'] = (dayStats.categories['OTHER'] || 0) + 60;
-          dailyStats[now] = dayStats;
-          chrome.storage.local.set({ dailyStats });
-        });
-      });
-    
-    // Create alarms for daily and weekly summaries
-    chrome.alarms.create('dailySummary', { periodInMinutes: 1440 }); // 24 hours
-    chrome.alarms.create('weeklySummary', { periodInMinutes: 10080 }); // 7 days
-    chrome.alarms.create('activityTracker', { periodInMinutes: 1 }); // Check every minute
-  });
-  
-  // Active tab tracking
-  let activeTabId = null;
-  let activeTabUrl = null;
-  let activeTabStartTime = null;
-  
-  // Track active tab changes
-  chrome.tabs.onActivated.addListener(async (activeInfo) => {
-    try {
-      const tab = await chrome.tabs.get(activeInfo.tabId);
-      handleTabChange(tab);
-    } catch (error) {
-      console.error("Error getting tab information:", error);
-    }
-  });
-  
-  // Track tab URL changes
-  chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status === 'complete' && tabId === activeTabId) {
-      handleTabChange(tab);
-    }
-  });
-  
-  // Handle tab changes
-  function handleTabChange(tab) {
-    // If there was an active tab, record its time
-    if (activeTabId && activeTabUrl && activeTabStartTime) {
-      recordTabActivity(activeTabUrl, Date.now() - activeTabStartTime);
-    }
-    
-    // Update active tab information
-    activeTabId = tab.id;
-    activeTabUrl = tab.url;
+}
+
+function updateCurrentActivity() {
+  if (activeTabId && activeTabUrl && activeTabStartTime) {
+    recordTabActivity(activeTabUrl, Date.now() - activeTabStartTime);
     activeTabStartTime = Date.now();
-    
-    // Check if focus mode is active and if site should be blocked
-    chrome.storage.local.get(['focusMode'], (data) => {
-      if (data.focusMode && data.focusMode.active) {
-        checkFocusMode(tab.url, tab.id);
-      }
-    });
   }
-  if (Object.keys(weeklyStats).length === 0 || !weeklyStats[currentDate]) {
-    fetchTopSitesFromHistory((topSitesData) => {
-      weeklyStats = topSitesData;
-      chrome.storage.local.set({ weeklyStats }, () => {
-        renderCharts(dailyStats, weeklyStats);
-      });
-    });
-  } else {
-    renderCharts(dailyStats, weeklyStats);
-  }
-  
-  // Record tab activity
-  function recordTabActivity(url, duration) {
-    if (!url || url === 'chrome://newtab/' || duration < 1000) return;
-    
-    const domain = extractDomain(url);
-    const category = categorizeUrl(domain);
-    const date = new Date().toISOString().split('T')[0];
-    
-    chrome.storage.local.get(['activityData', 'dailyStats', 'settings'], (data) => {
-      // Update activity data
-      const activityData = data.activityData || {};
-      if (!activityData[date]) activityData[date] = {};
-      if (!activityData[date][domain]) activityData[date][domain] = 0;
-      activityData[date][domain] += Math.round(duration / 1000);
-      
-      // Update daily stats
-      const dailyStats = data.dailyStats || {};
-      if (!dailyStats[date]) {
-        dailyStats[date] = {
-          totalTime: 0,
-          categories: {}
-        };
-      }
-      dailyStats[date].totalTime += Math.round(duration / 1000);
-      
-      if (!dailyStats[date].categories[category]) {
-        dailyStats[date].categories[category] = 0;
-      }
-      dailyStats[date].categories[category] += Math.round(duration / 1000);
-      
-      // Check if any category limits are exceeded
-      const settings = data.settings || {};
-      if (settings.categoriesLimit && settings.categoriesLimit[category]) {
-        const categoryTimeInMinutes = Math.round(dailyStats[date].categories[category] / 60);
-        if (categoryTimeInMinutes >= settings.categoriesLimit[category] && settings.notificationsEnabled) {
-          chrome.notifications.create({
-            type: 'basic',
-            iconUrl: 'images/icon128.png',
-            title: 'Category Limit Reached',
-            message: `You've spent ${categoryTimeInMinutes} minutes on ${category.toLowerCase()} sites today, which exceeds your goal.`,
-            priority: 2
-          });
-        }
-      }
-      
-      // Save updated data
-      chrome.storage.local.set({ activityData, dailyStats });
-    });
-  }
-  
-  // Extract domain from URL
-  function extractDomain(url) {
-    try {
-      const hostname = new URL(url).hostname;
-      return hostname.startsWith('www.') ? hostname.substring(4) : hostname;
-    } catch (e) {
-      return '';
-    }
-  }
-  
-  // Categorize URL
-  function categorizeUrl(domain) {
-    for (const [category, domains] of Object.entries(CATEGORIES)) {
-      if (domains.some(d => domain.includes(d))) {
-        return category;
-      }
-    }
-    return 'OTHER';
-  }
-  
-  // Check focus mode
-  function checkFocusMode(url, tabId) {
-    chrome.storage.local.get(['focusMode'], (data) => {
-      if (!data.focusMode || !data.focusMode.active) return;
-      
-      const domain = extractDomain(url);
-      if (data.focusMode.blockedSites.includes(domain)) {
-        chrome.tabs.update(tabId, { url: 'focus-blocked.html' });
-      }
-    });
-  }
-  
-  // Alarm handler
-  chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === 'dailySummary') {
-      generateDailySummary();
-    } else if (alarm.name === 'weeklySummary') {
-      generateWeeklySummary();
-    } else if (alarm.name === 'activityTracker') {
-      updateCurrentActivity();
-    } else if (alarm.name === 'focusModeEnd') {
-      endFocusMode();
+}
+
+function startFocusMode(duration, blockedSites) {
+  const startTime = Date.now();
+  const endTime = startTime + duration * 60 * 1000;
+  chrome.storage.local.set({
+    focusMode: { active: true, startTime, endTime, blockedSites }
+  });
+  chrome.alarms.create('focusModeEnd', { when: endTime });
+  notify('Focus Mode', `Started for ${duration} minutes.`);
+}
+
+function endFocusMode() {
+  chrome.storage.local.set({
+    focusMode: { active: false, startTime: null, endTime: null, blockedSites: [] }
+  });
+  notify('Focus Mode', 'Great job! Focus mode ended.');
+}
+
+function suggestBreak() {
+  chrome.storage.local.get(['dailyStats', 'settings'], (data) => {
+    const today = new Date().toISOString().split('T')[0];
+    const minutes = Math.round((data.dailyStats?.[today]?.totalTime || 0) / 60);
+    if (minutes >= data.settings.breakReminderInterval && data.settings.notificationsEnabled) {
+      notify('Take a Break', 'You’ve been online for a while. Time for a break?');
     }
   });
-  
-  // Generate daily summary
-  function generateDailySummary() {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const date = yesterday.toISOString().split('T')[0];
-    
-    chrome.storage.local.get(['dailyStats', 'settings'], (data) => {
-      if (!data.dailyStats || !data.dailyStats[date]) return;
-      
-      const stats = data.dailyStats[date];
-      const totalTimeInMinutes = Math.round(stats.totalTime / 60);
-      const settings = data.settings || {};
-      
-      let message = `Yesterday, you spent ${totalTimeInMinutes} minutes online.`;
-      
-      if (settings.dailyScreenTimeGoal && totalTimeInMinutes > settings.dailyScreenTimeGoal) {
-        message += ` This exceeds your daily goal of ${settings.dailyScreenTimeGoal} minutes.`;
-      }
-      
-      if (settings.notificationsEnabled) {
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'images/icon128.png',
-          title: 'Daily Digital Wellbeing Summary',
-          message: message,
-          priority: 2
-        });
-      }
-    });
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'getStats') {
+    chrome.storage.local.get(['dailyStats', 'weeklyStats', 'productivityScore'], sendResponse);
+    return true;
+  } else if (message.action === 'getSettings') {
+    chrome.storage.local.get(['settings'], (data) => sendResponse(data.settings));
+    return true;
+  } else if (message.action === 'updateSettings') {
+    chrome.storage.local.set({ settings: message.settings }, () => sendResponse({ success: true }));
+    return true;
+  } else if (message.action === 'startFocusMode') {
+    startFocusMode(message.duration, message.blockedSites);
+    sendResponse({ success: true });
+  } else if (message.action === 'endFocusMode') {
+    endFocusMode();
+    sendResponse({ success: true });
+  } else if (message.action === 'getFocusMode') {
+    chrome.storage.local.get(['focusMode'], (data) => sendResponse(data.focusMode));
+    return true;
+  } else if (message.action === 'exportWeeklyReport') {
+    exportWeeklyReport();
+    sendResponse({ success: true });
+  } else if (message.action === 'updateActivity') {
+    if (message.data.isActive && activeTabUrl === message.data.url) {
+      activeTabStartTime = message.data.timestamp;
+    }
+    sendResponse({ success: true });
+    return true;
   }
-  
-  // Generate weekly summary
-  function generateWeeklySummary() {
-    const today = new Date();
-    const weeklyStats = {};
-    
-    chrome.storage.local.get(['dailyStats'], (data) => {
-      if (!data.dailyStats) return;
-      
-      // Calculate weekly stats
-      for (let i = 0; i < 7; i++) {
-        const date = new Date(today);
-        date.setDate(date.getDate() - i);
-        const dateStr = date.toISOString().split('T')[0];
-        
-        if (data.dailyStats[dateStr]) {
-          weeklyStats[dateStr] = data.dailyStats[dateStr];
-        }
-      }
-      
-      // Save weekly stats
-      chrome.storage.local.set({ weeklyStats });
-      
-      // Show notification
-      chrome.storage.local.get(['settings'], (settingsData) => {
-        if (settingsData.settings && settingsData.settings.notificationsEnabled) {
-          chrome.notifications.create({
-            type: 'basic',
-            iconUrl: 'images/icon128.png',
-            title: 'Weekly Digital Wellbeing Summary',
-            message: 'Your weekly usage summary is ready. Click to view detailed insights.',
-            priority: 2
-          });
-        }
-      });
-    });
-  }
-  
-  // Update current activity
-  function updateCurrentActivity() {
+  return true;
+});
+
+chrome.idle.onStateChanged.addListener((state) => {
+  if (state === 'idle' || state === 'locked') {
     if (activeTabId && activeTabUrl && activeTabStartTime) {
       recordTabActivity(activeTabUrl, Date.now() - activeTabStartTime);
-      activeTabStartTime = Date.now();
+      activeTabStartTime = null;
     }
-  }
-  
-  // Start focus mode
-  function startFocusMode(duration, blockedSites) {
-    const startTime = Date.now();
-    const endTime = startTime + (duration * 60 * 1000);
-    
-    chrome.storage.local.set({
-      focusMode: {
-        active: true,
-        startTime,
-        endTime,
-        blockedSites
-      }
-    });
-    
-    chrome.alarms.create('focusModeEnd', { when: endTime });
-    
-    chrome.notifications.create({
-      type: 'basic',
-      iconUrl: 'images/icon128.png',
-      title: 'Focus Mode Started',
-      message: `Focus mode activated for ${duration} minutes. Stay focused!`,
-      priority: 2
+  } else if (state === 'active') {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) handleTabChange(tabs[0]);
     });
   }
-  
-  // End focus mode
-  function endFocusMode() {
-    chrome.storage.local.set({
-      focusMode: {
-        active: false,
-        startTime: null,
-        endTime: null,
-        blockedSites: []
-      }
-    });
-    
-    chrome.notifications.create({
-      type: 'basic',
-      iconUrl: 'images/icon128.png',
-      title: 'Focus Mode Ended',
-      message: 'Great job! Focus mode has ended.',
-      priority: 2
-    });
-  }
-  
-  // Listen for messages from popup or content scripts
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.action === 'getStats') {
-      chrome.storage.local.get(['dailyStats', 'weeklyStats'], (data) => {
-        sendResponse(data);
-      });
-      return true;
-    } else if (message.action === 'getSettings') {
-      chrome.storage.local.get(['settings'], (data) => {
-        sendResponse(data.settings);
-      });
-      return true;
-    } else if (message.action === 'updateSettings') {
-      chrome.storage.local.set({ settings: message.settings }, () => {
-        sendResponse({ success: true });
-      });
-      return true;
-    } else if (message.action === 'startFocusMode') {
-      startFocusMode(message.duration, message.blockedSites);
-      sendResponse({ success: true });
-      return true;
-    } else if (message.action === 'endFocusMode') {
-      endFocusMode();
-      sendResponse({ success: true });
-      return true;
-    } else if (message.action === 'getFocusMode') {
-      chrome.storage.local.get(['focusMode'], (data) => {
-        sendResponse(data.focusMode);
-      });
-      return true;
+});
+
+function exportWeeklyReport() {
+  chrome.storage.local.get(['weeklyStats'], (data) => {
+    const weeklyStats = data.weeklyStats || { sites: {}, categories: {} };
+    let content = 'Weekly Digital Wellbeing Report\n\n';
+    content += `Total Time: ${Math.round(weeklyStats.totalTime / 60)} minutes\n\n`;
+    content += 'Top Sites:\n';
+    for (const [site, sec] of Object.entries(weeklyStats.sites || {})) {
+      content += `  ${site}: ${Math.round(sec / 60)} minutes\n`;
     }
+    content += '\nCategories:\n';
+    for (const [cat, sec] of Object.entries(weeklyStats.categories || {})) {
+      content += `  ${cat}: ${Math.round(sec / 60)} minutes\n`;
+    }
+    const blob = new Blob([content], { type: 'text/plain' });
+    chrome.downloads.download({
+      url: URL.createObjectURL(blob),
+      filename: `weekly_report_${new Date().toISOString().split('T')[0]}.txt`
+    });
   });
-  
-  // Handle idle state changes
-  chrome.idle.onStateChanged.addListener((state) => {
-    if (state === 'idle' || state === 'locked') {
-      if (activeTabId && activeTabUrl && activeTabStartTime) {
-        recordTabActivity(activeTabUrl, Date.now() - activeTabStartTime);
-        activeTabStartTime = null;
-      }
-    } else if (state === 'active') {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs.length > 0) {
-          handleTabChange(tabs[0]);
-        }
-      });
-    }
-  });
+}
