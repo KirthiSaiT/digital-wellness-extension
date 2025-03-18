@@ -1,4 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
+  // Force an update of current tab activity to ensure data is fresh
+  chrome.runtime.sendMessage({ action: 'updateCurrentActivity' });
+
   const tabButtons = document.querySelectorAll('.tab-btn');
   const tabContents = document.querySelectorAll('.tab-content');
 
@@ -22,11 +25,19 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('export-report')?.addEventListener('click', () => {
     chrome.runtime.sendMessage({ action: 'exportWeeklyReport' });
   });
+
+  // Listen for data updates from background.js
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'dataUpdated') {
+      updateDashboardData();
+      loadInsightsData();
+    }
+  });
 });
 
 function initDashboard() {
   updateDashboardData();
-  setInterval(updateDashboardData, 30000);
+  setInterval(updateDashboardData, 10000); // Reduced interval to 10 seconds for faster updates
 }
 
 function updateDashboardData() {
@@ -37,7 +48,12 @@ function updateDashboardData() {
     const productivityScore = data.productivityScore || { today: 0 };
 
     document.getElementById('daily-goal').textContent = settings.dailyScreenTimeGoal;
-    const todayStats = dailyStats[today] || { totalTime: 0, sites: {}, categories: {} };
+    const todayStats = dailyStats[today] || { 
+      totalTime: 0, 
+      sites: {}, 
+      categories: { Social: 0, Work: 0, Entertainment: 0, Other: 0 } 
+    };
+    
     const totalMinutes = Math.round(todayStats.totalTime / 60);
     document.getElementById('today-total-time').textContent = `${totalMinutes} min`;
     const progressPercentage = Math.min((totalMinutes / settings.dailyScreenTimeGoal) * 100, 100);
@@ -48,18 +64,37 @@ function updateDashboardData() {
     const categoryList = document.getElementById('category-list');
     categoryList.innerHTML = '';
     const categoryColors = { Social: '#ff6b6b', Work: '#4ecdc4', Entertainment: '#45b7d1', Other: '#96c93d' };
+    
+    // Get category entries and sort by time spent
     const categories = Object.entries(todayStats.categories || {}).sort((a, b) => b[1] - a[1]);
-    categories.forEach(([category, seconds]) => {
-      const minutes = Math.round(seconds / 60);
-      const item = document.createElement('div');
-      item.className = 'category-item';
-      item.innerHTML = `
-        <span><span class="category-color" style="background: ${categoryColors[category] || '#adb5bd'}"></span>${category}</span>
-        <span>${minutes} min</span>
-      `;
-      categoryList.appendChild(item);
-    });
-    if (!categories.length) categoryList.innerHTML = '<div style="text-align: center; color: #6c757d;">No activity yet.</div>';
+    
+    // Debugging: Log the raw data to verify
+    console.log("Today’s raw categories data:", todayStats.categories);
+
+    // Check if there’s any activity
+    const hasActivity = categories.some(([_, seconds]) => seconds > 0);
+    
+    if (!hasActivity) {
+      categoryList.innerHTML = '<div style="text-align: center; color: #6c757d;">No activity yet today.</div>';
+    } else {
+      categories.forEach(([category, seconds]) => {
+        const minutes = Math.round(seconds / 60);
+        if (minutes > 0) { // Only show categories with activity
+          const item = document.createElement('div');
+          item.className = 'category-item';
+          item.innerHTML = `
+            <span><span class="category-color" style="background: ${categoryColors[category] || '#adb5bd'}"></span>${category}</span>
+            <span>${minutes} min</span>
+          `;
+          categoryList.appendChild(item);
+        }
+      });
+      
+      // If no items were added (shouldn’t happen with hasActivity), show a fallback
+      if (categoryList.children.length === 0) {
+        categoryList.innerHTML = '<div style="text-align: center; color: #6c757d;">No significant activity yet.</div>';
+      }
+    }
 
     const tips = [
       "Take short breaks every hour to boost focus.",
@@ -266,5 +301,5 @@ function updateRecommendations(dailyStats) {
   if (avgDaily > 180) recs.push('Reduce screen time by 30 min/day.');
   if (totalMinutes > 1200) recs.push('Consider stricter site limits.');
   recs.slice(0, 3).forEach(rec => list.innerHTML += `<li>${rec}</li>`);
-  if (!recs.length) list.innerHTML = '<li>You’re doing great!</li>';
+  if (!recs.length) list.innerHTML = '<li>You are doing great!</li>';
 }

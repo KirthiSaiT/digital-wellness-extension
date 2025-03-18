@@ -59,7 +59,6 @@ function handleTabChange(tab) {
     if (data.focusMode?.active) checkFocusMode(tab.url, tab.id);
   });
 }
-
 function recordTabActivity(url, duration) {
   if (!url || url.startsWith('chrome://') || duration < 1000) return;
 
@@ -74,21 +73,37 @@ function recordTabActivity(url, duration) {
     const settings = data.settings || {};
     let productivityScore = data.productivityScore || { today: 0, weeklyAvg: 0 };
 
+    // Update activity data (site-specific)
     if (!activityData[date]) activityData[date] = {};
     activityData[date][domain] = (activityData[date][domain] || 0) + seconds;
 
-    if (!dailyStats[date]) dailyStats[date] = { totalTime: 0, sites: {}, categories: {} };
+    // Ensure dailyStats[date] is initialized properly
+    if (!dailyStats[date]) {
+      dailyStats[date] = { 
+        totalTime: 0, 
+        sites: {}, 
+        categories: { Social: 0, Work: 0, Entertainment: 0, Other: 0 } 
+      };
+    }
+
+    // Update daily stats
     dailyStats[date].totalTime += seconds;
     dailyStats[date].sites[domain] = (dailyStats[date].sites[domain] || 0) + seconds;
     dailyStats[date].categories[category] = (dailyStats[date].categories[category] || 0) + seconds;
 
+    // Debugging: Log the update to confirm it’s working
+    console.log(`Recording ${seconds}s for ${domain} in ${category} on ${date}`, dailyStats[date]);
+
     checkLimits(settings, dailyStats[date], domain, seconds);
     updateProductivityScore(productivityScore, domain, seconds, date);
 
-    chrome.storage.local.set({ activityData, dailyStats, productivityScore });
+    // Save the updated data and ensure it’s synced
+    chrome.storage.local.set({ activityData, dailyStats, productivityScore }, () => {
+      console.log(`Data saved for ${date}:`, dailyStats[date]);
+      chrome.runtime.sendMessage({ action: 'dataUpdated' });
+    });
   });
 }
-
 function extractDomain(url) {
   try {
     const hostname = new URL(url).hostname;
@@ -157,7 +172,9 @@ function generateDailySummary() {
 function generateWeeklySummary() {
   chrome.storage.local.get(['dailyStats', 'settings'], (data) => {
     const weeklyData = aggregateWeeklyStats(data.dailyStats || {});
-    chrome.storage.local.set({ weeklyStats: weeklyData });
+    chrome.storage.local.set({ weeklyStats: weeklyData }, () => {
+      chrome.runtime.sendMessage({ action: 'dataUpdated' });
+    });
     if (data.settings.notificationsEnabled) notify('Weekly Summary', 'Your weekly report is ready!');
   });
 }
@@ -212,7 +229,7 @@ function suggestBreak() {
     const today = new Date().toISOString().split('T')[0];
     const minutes = Math.round((data.dailyStats?.[today]?.totalTime || 0) / 60);
     if (minutes >= data.settings.breakReminderInterval && data.settings.notificationsEnabled) {
-      notify('Take a Break', 'You’ve been online for a while. Time for a break?');
+      notify('Take a Break', 'You have been online for a while. Time for a break?');
     }
   });
 }
@@ -243,6 +260,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.data.isActive && activeTabUrl === message.data.url) {
       activeTabStartTime = message.data.timestamp;
     }
+    sendResponse({ success: true });
+    return true;
+  } else if (message.action === 'updateCurrentActivity') {
+    updateCurrentActivity();
     sendResponse({ success: true });
     return true;
   }
